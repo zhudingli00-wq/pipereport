@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Vision 1.2 B8 水管算量统计</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web@2.0.3"></script>
+<style>
+:root {
+  --bg-deep: #0a0e1a;
+  --bg-panel: rgba(13,19,36,0.85);
+  --bg-card: rgba(20,30,55,0.7);
+  --accent-cyan: #00e5ff;
+  --accent-teal: #0cc0a0;
+  --accent-blue: #3b82f6;
+  --accent-pink: #f472b6;
+  --accent-amber: #f59e0b;
+  --accent-violet: #8b5cf6;
+  --glow-cyan: 0 0 30px rgba(0,229,255,0.25);
+  --text-primary: #e8edf5;
+  --text-secondary: rgba(200,215,240,0.6);
+  --grid-color: rgba(0,229,255,0.06);
+  --border-glow: rgba(0,229,255,0.15);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Noto Sans SC','Helvetica Neue',sans-serif;
+  background:var(--bg-deep);
+  color:var(--text-primary);
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+.font-mono{font-family:'JetBrains Mono',monospace}
+
+/* Noise overlay */
+body::before{
+  content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
+  background:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity:.4;
+}
+
+/* Blueprint grid background */
+.blueprint-grid{
+  background-image:
+    linear-gradient(var(--grid-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+  background-size:60px 60px;
+}
+
+/* Progress bar */
+#progress-bar{
+  position:fixed;top:0;left:0;height:3px;z-index:10000;
+  background:linear-gradient(90deg,var(--accent-cyan),var(--accent-teal),var(--accent-blue));
+  box-shadow:var(--glow-cyan);
+  transform-origin:left;transform:scaleX(0);
+  transition:none;
+}
+
+/* Glow text */
+.glow-text{
+  text-shadow:0 0 40px rgba(0,229,255,0.35),0 0 80px rgba(0,229,255,0.1);
+}
+.glow-line{
+  height:1px;
+  background:linear-gradient(90deg,transparent,var(--accent-cyan),transparent);
+  box-shadow:0 0 12px rgba(0,229,255,0.3);
+}
+
+/* Section titles */
+.section-tag{
+  display:inline-flex;align-items:center;gap:6px;
+  font-family:'JetBrains Mono',monospace;font-size:11px;
+  letter-spacing:3px;text-transform:uppercase;
+  color:var(--accent-cyan);opacity:.8;
+  border:1px solid var(--border-glow);
+  padding:4px 14px;border-radius:2px;
+  background:rgba(0,229,255,0.04);
+}
+
+/* KPI Cards */
+.kpi-card{
+  background:var(--bg-card);
+  border:1px solid var(--border-glow);
+  border-radius:8px;
+  backdrop-filter:blur(12px);
+  padding:28px 24px;
+  position:relative;overflow:hidden;
+  transition:border-color .3s,box-shadow .3s;
+}
+.kpi-card:hover{
+  border-color:rgba(0,229,255,0.4);
+  box-shadow:var(--glow-cyan);
+}
+.kpi-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--accent-cyan),var(--accent-teal));
+  opacity:0;transition:opacity .3s;
+}
+.kpi-card:hover::before{opacity:1}
+
+/* Chart containers */
+.chart-panel{
+  background:var(--bg-panel);
+  border:1px solid var(--border-glow);
+  border-radius:12px;
+  backdrop-filter:blur(16px);
+  overflow:hidden;
+}
+
+/* Data table */
+.data-table{border-collapse:separate;border-spacing:0;width:100%}
+.data-table thead th{
+  background:rgba(0,229,255,0.06);
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  letter-spacing:1px;color:var(--accent-cyan);
+  padding:14px 16px;text-align:left;
+  border-bottom:1px solid var(--border-glow);
+  position:sticky;top:0;z-index:2;
+}
+.data-table tbody td{
+  padding:12px 16px;
+  border-bottom:1px solid rgba(0,229,255,0.04);
+  font-size:14px;
+  transition:background .2s;
+}
+.data-table tbody tr:hover td{background:rgba(0,229,255,0.04)}
+.data-table tbody tr.subtotal-row td{
+  background:rgba(0,229,255,0.08);
+  font-weight:700;border-top:1px solid var(--border-glow);
+}
+.data-table tbody tr.grand-total td{
+  background:rgba(0,229,255,0.12);font-weight:900;
+  font-family:'JetBrains Mono',monospace;
+  border-top:2px solid var(--accent-cyan);
+  color:var(--accent-cyan);font-size:15px;
+}
+
+/* Callout box */
+.callout-box{
+  background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.02));
+  border:1px solid rgba(245,158,11,0.25);
+  border-radius:8px;padding:20px 24px;
+}
+
+/* Scroll fade-in */
+.reveal{opacity:0;transform:translateY(40px)}
+
+/* Hero particles */
+.hero-particle{
+  position:absolute;border-radius:50%;
+  background:var(--accent-cyan);
+  opacity:.15;filter:blur(1px);
+  animation:float-particle linear infinite;
+}
+@keyframes float-particle{
+  0%{transform:translateY(0) translateX(0)}
+  50%{transform:translateY(-30px) translateX(15px)}
+  100%{transform:translateY(0) translateX(0)}
+}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg-deep)}
+::-webkit-scrollbar-thumb{background:rgba(0,229,255,0.2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:rgba(0,229,255,0.4)}
+
+/* Chart tooltip override */
+.chart-tooltip{
+  background:rgba(10,14,26,0.95)!important;
+  border:1px solid rgba(0,229,255,0.25)!important;
+  border-radius:8px!important;
+  backdrop-filter:blur(12px)!important;
+  box-shadow:0 8px 32px rgba(0,0,0,0.5),var(--glow-cyan)!important;
+  padding:0!important;
+}
+
+@media(max-width:768px){
+  .kpi-card{padding:20px 16px}
+}
+</style>
+</head>
+<body>
+<!-- Progress Bar -->
+<div id="progress-bar"></div>
+
+<!-- ============ HERO ============ -->
+<section class="blueprint-grid relative min-h-screen flex items-center justify-center overflow-hidden" id="hero">
+  <div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[var(--bg-deep)]"></div>
+  <div class="absolute inset-0" style="background:radial-gradient(ellipse 80% 60% at 50% 40%,rgba(0,229,255,0.06),transparent 70%)"></div>
+  <!-- Decorative circles -->
+  <div class="absolute w-[600px] h-[600px] border border-[rgba(0,229,255,0.05)] rounded-full" style="top:-100px;right:-200px"></div>
+  <div class="absolute w-[400px] h-[400px] border border-[rgba(0,229,255,0.04)] rounded-full" style="bottom:-50px;left:-150px"></div>
+
+  <div class="relative z-10 text-center px-6 max-w-4xl mx-auto">
+    <div class="section-tag mb-8" id="hero-tag">
+      <i class="ph ph-blueprint" style="font-size:14px"></i> MEP PIPE SCHEDULE
+    </div>
+    <h1 class="text-5xl md:text-7xl font-black tracking-tight leading-tight glow-text mb-6" id="hero-title" style="opacity:0">
+      Vision 1.2 B8<br>
+      <span class="bg-gradient-to-r from-[var(--accent-cyan)] via-[var(--accent-teal)] to-[var(--accent-blue)] bg-clip-text text-transparent">水管算量统计</span>
+    </h1>
+    <p class="text-lg md:text-xl font-light leading-relaxed mb-10" id="hero-sub" style="opacity:0;color:var(--text-secondary)">
+      覆盖 <span class="font-mono text-[var(--accent-cyan)] font-semibold">10</span> 大管道子系统 &middot;
+      <span class="font-mono text-[var(--accent-cyan)] font-semibold">15</span> 种管径规格 &middot;
+      总计 <span class="font-mono text-[var(--accent-cyan)] font-semibold">12,969.91</span> 米管道工程量
+    </p>
+    <div class="glow-line w-48 mx-auto mb-10" id="hero-line" style="opacity:0"></div>
+    <a href="#kpi" class="inline-flex items-center gap-2 text-sm font-mono tracking-widest text-[var(--text-secondary)] hover:text-[var(--accent-cyan)] transition-colors" id="hero-cta" style="opacity:0">
+      <span>SCROLL TO EXPLORE</span>
+      <i class="ph ph-caret-double-down" style="animation:bounce 2s infinite"></i>
+    </a>
+  </div>
+</section>
+
+<!-- ============ KPI SECTION ============ -->
+<section class="relative px-6 py-24 max-w-6xl mx-auto" id="kpi">
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-5">
+    <div class="kpi-card reveal">
+      <div class="flex items-center gap-2 mb-4"><i class="ph ph-pipe text-[var(--accent-cyan)]" style="font-size:22px"></i><span class="text-xs font-mono tracking-widest" style="color:var(--text-secondary)">系统总数</span></div>
+      <div class="text-4xl font-black font-mono glow-text" data-count="10">0</div>
+      <div class="text-xs mt-2" style="color:var(--text-secondary)">个管道子系统</div>
+    </div>
+    <div class="kpi-card reveal">
+      <div class="flex items-center gap-2 mb-4"><i class="ph ph-ruler text-[var(--accent-teal)]" style="font-size:22px"></i><span class="text-xs font-mono tracking-widest" style="color:var(--text-secondary)">管道总长</span></div>
+      <div class="text-4xl font-black font-mono glow-text" data-count="12969.91">0</div>
+      <div class="text-xs mt-2" style="color:var(--text-secondary)">米 (m)</div>
+    </div>
+    <div class="kpi-card reveal">
+      <div class="flex items-center gap-2 mb-4"><i class="ph ph-circles-three text-[var(--accent-blue)]" style="font-size:22px"></i><span class="text-xs font-mono tracking-widest" style="color:var(--text-secondary)">管径规格</span></div>
+      <div class="text-4xl font-black font-mono glow-text" data-count="15">0</div>
+      <div class="text-xs mt-2" style="color:var(--text-secondary)">种不同规格</div>
+    </div>
+    <div class="kpi-card reveal">
+      <div class="flex items-center gap-2 mb-4"><i class="ph ph-arrow-fat-up text-[var(--accent-amber)]" style="font-size:22px"></i><span class="text-xs font-mono tracking-widest" style="color:var(--text-secondary)">最大子系统</span></div>
+      <div class="text-4xl font-black font-mono glow-text" data-count="10533.6">0</div>
+      <div class="text-xs mt-2" style="color:var(--text-secondary)">米 &mdash; 地暖水管</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CHART 1: Bar Chart ============ -->
+<section class="relative px-6 py-20 max-w-6xl mx-auto">
+  <div class="reveal mb-12">
+    <div class="section-tag mb-4"><i class="ph ph-chart-bar-horizontal" style="font-size:14px"></i> SYSTEM COMPARISON</div>
+    <h2 class="text-3xl md:text-4xl font-bold tracking-tight">各系统管道总长度对比</h2>
+    <p class="text-sm mt-3" style="color:var(--text-secondary)">横向对比十大管道子系统工程量，地暖系统因 DE16 管路密集铺设，用量远超其他系统</p>
+  </div>
+  <div class="grid lg:grid-cols-3 gap-6">
+    <div class="chart-panel lg:col-span-2 p-6 reveal">
+      <div class="text-xs font-mono tracking-widest mb-4" style="color:var(--text-secondary)">除地暖系统外各系统对比 (m)</div>
+      <div id="chart-bar" style="width:100%;height:420px"></div>
+    </div>
+    <div class="reveal flex flex-col gap-6">
+      <div class="callout-box flex-1 flex flex-col justify-center">
+        <div class="flex items-center gap-2 mb-3">
+          <i class="ph ph-fire text-[var(--accent-amber)]" style="font-size:24px"></i>
+          <span class="text-xs font-mono tracking-widest" style="color:var(--accent-amber)">DOMINANT SYSTEM</span>
+        </div>
+        <div class="text-3xl font-black font-mono mb-1" style="color:var(--accent-amber)">10,533.60<span class="text-lg font-normal ml-1">m</span></div>
+        <div class="text-sm font-medium mb-2">地暖水管系统</div>
+        <p class="text-xs leading-relaxed" style="color:var(--text-secondary)">地暖 DE16 管道铺设长达 10,450m，占全部管道工程量的 <span class="font-mono font-bold text-[var(--accent-amber)]">80.6%</span>，是第二大系统（给水系统）的 <span class="font-mono font-bold text-[var(--accent-amber)]">14.6 倍</span></p>
+      </div>
+      <div class="chart-panel p-5">
+        <div class="text-xs font-mono tracking-widest mb-3" style="color:var(--text-secondary)">地暖 vs 其余系统</div>
+        <div id="chart-dominance" style="width:100%;height:160px"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CHART 2: Treemap ============ -->
+<section class="relative px-6 py-20 max-w-6xl mx-auto">
+  <div class="reveal mb-12">
+    <div class="section-tag mb-4"><i class="ph ph-squares-four" style="font-size:14px"></i> SPEC OVERVIEW</div>
+    <h2 class="text-3xl md:text-4xl font-bold tracking-tight">管径规格分布总览</h2>
+    <p class="text-sm mt-3" style="color:var(--text-secondary)">按系统分组展示所有管径规格的工程量占比，矩形面积对应管道长度（不含地暖 DE16）</p>
+  </div>
+  <div class="chart-panel p-6 reveal">
+    <div id="chart-treemap" style="width:100%;height:520px"></div>
+  </div>
+</section>
+
+<!-- ============ CHART 3: Stacked Bar ============ -->
+<section class="relative px-6 py-20 max-w-6xl mx-auto">
+  <div class="reveal mb-12">
+    <div class="section-tag mb-4"><i class="ph ph-stack" style="font-size:14px"></i> SPEC DETAILS</div>
+    <h2 class="text-3xl md:text-4xl font-bold tracking-tight">各系统管径规格明细</h2>
+    <p class="text-sm mt-3" style="color:var(--text-secondary)">堆叠展示每个系统内不同管径规格的构成比例（不含地暖 DE16 以保持可读性）</p>
+  </div>
+  <div class="chart-panel p-6 reveal">
+    <div id="chart-stacked" style="width:100%;height:480px"></div>
+  </div>
+</section>
+
+<!-- ============ CHART 4: Donut ============ -->
+<section class="relative px-6 py-20 max-w-6xl mx-auto">
+  <div class="reveal mb-12">
+    <div class="section-tag mb-4"><i class="ph ph-chart-donut" style="font-size:14px"></i> PROPORTION</div>
+    <h2 class="text-3xl md:text-4xl font-bold tracking-tight">各系统管道用量占比</h2>
+    <p class="text-sm mt-3" style="color:var(--text-secondary)">扣除地暖 DE16 后，各系统在剩余 2,519.91m 管道中的份额分布</p>
+  </div>
+  <div class="grid lg:grid-cols-2 gap-6">
+    <div class="chart-panel p-6 reveal">
+      <div id="chart-donut" style="width:100%;height:420px"></div>
+    </div>
+    <div class="chart-panel p-6 reveal flex flex-col justify-center">
+      <div class="text-xs font-mono tracking-widest mb-6" style="color:var(--text-secondary)">TOP 5 系统排名</div>
+      <div class="space-y-5" id="rank-list"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DATA TABLE ============ -->
+<section class="relative px-6 py-20 max-w-6xl mx-auto">
+  <div class="reveal mb-12">
+    <div class="section-tag mb-4"><i class="ph ph-table" style="font-size:14px"></i> FULL DATA</div>
+    <h2 class="text-3xl md:text-4xl font-bold tracking-tight">管道工程量明细表</h2>
+    <p class="text-sm mt-3" style="color:var(--text-secondary)">完整数据纵览，包含所有系统、管径规格及长度汇总</p>
+  </div>
+  <div class="chart-panel reveal overflow-x-auto">
+    <table class="data-table" id="detail-table">
+      <thead>
+        <tr>
+          <th style="min-width:60px">序号</th>
+          <th style="min-width:200px">管道系统</th>
+          <th style="min-width:100px">管径规格</th>
+          <th style="min-width:130px;text-align:right">长度 (m)</th>
+          <th style="min-width:130px;text-align:right">系统小计 (m)</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="text-center py-16 px-6" style="border-top:1px solid var(--border-glow)">
+  <div class="text-xs font-mono tracking-widest mb-2" style="color:var(--text-secondary)">VISION 1.2 B8 &middot; 水管算量统计报告</div>
+  <div class="text-xs" style="color:rgba(200,215,240,0.3)">数据来源：BIM 管道明细表 &middot; 生成日期：2026-03-24</div>
+</footer>
+
+<script>
+// ===== DATA =====
+const SYSTEMS = [
+  { name:'空调供回水', short:'空调供回水', specs:[ {s:'DN20',v:145.43},{s:'DN25',v:63.52},{s:'DN32',v:74.55},{s:'DN40',v:51.53},{s:'DN50',v:58.41},{s:'DN65',v:51.64} ], total:445.08 },
+  { name:'冷凝水水管', short:'冷凝水', specs:[ {s:'DE25',v:81.13},{s:'DE32',v:41.10},{s:'DE40',v:18.88} ], total:141.11 },
+  { name:'给水系统', short:'给水系统', specs:[ {s:'DN15',v:142.76},{s:'DN20',v:420.33},{s:'DN25',v:124.55},{s:'DN32',v:35.82} ], total:723.46 },
+  { name:'智能排水系统', short:'智能排水', specs:[ {s:'DN15',v:81.50},{s:'DN20',v:11.62} ], total:93.12 },
+  { name:'辐射板水管', short:'辐射板', specs:[ {s:'Φ20',v:605.07},{s:'DE32',v:45.50},{s:'DE40',v:28.80} ], total:679.37 },
+  { name:'污水管废水管', short:'污水废水', specs:[ {s:'DE50',v:47.05},{s:'DE75',v:57.37},{s:'DE110',v:49.47} ], total:153.90 },
+  { name:'地暖水管', short:'地暖', specs:[ {s:'DN32',v:83.60},{s:'DE16',v:10450.00} ], total:10533.60 },
+  { name:'酒窖空调', short:'酒窖空调', specs:[ {s:'9.52/15.1',v:38.06} ], total:38.06 },
+  { name:'水系统室外主管', short:'室外主管', specs:[ {s:'DN40',v:11.65},{s:'DE65',v:115.18} ], total:126.83 },
+  { name:'泳池辅助空调', short:'泳池空调', specs:[ {s:'9.52/15.1',v:1.34},{s:'12.7/19.1',v:34.04} ], total:35.38 }
+];
+
+const PALETTE = ['#00e5ff','#0cc0a0','#3b82f6','#8b5cf6','#f472b6','#f59e0b','#ef4444','#06b6d4','#84cc16','#e879f9'];
+const SPEC_COLORS = {};
+const allSpecs = [...new Set(SYSTEMS.flatMap(s=>s.specs.map(sp=>sp.s)))];
+const specPalette = ['#00e5ff','#0cc0a0','#3b82f6','#8b5cf6','#f472b6','#f59e0b','#ef4444','#06b6d4','#84cc16','#e879f9','#fb923c','#2dd4bf','#a78bfa','#fbbf24','#f87171'];
+allSpecs.forEach((s,i)=> SPEC_COLORS[s] = specPalette[i % specPalette.length]);
+
+const GRAND_TOTAL = SYSTEMS.reduce((a,s)=>a+s.total,0);
+const TOTAL_EX_FLOOR = GRAND_TOTAL - 10450;
+
+function fmt(n,d=2){ return n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+
+function tooltipBase(title,items){
+  let html = `<div style="padding:14px 18px;font-family:'Noto Sans SC',sans-serif">`;
+  html += `<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:#e8edf5">${title}</div>`;
+  items.forEach(it=>{
+    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">`;
+    html += `<span style="width:10px;height:10px;border-radius:2px;background:${it.color};flex-shrink:0"></span>`;
+    html += `<span style="font-size:12px;color:rgba(200,215,240,0.7);flex:1">${it.label}</span>`;
+    html += `<span style="font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;color:#e8edf5">${it.value}</span>`;
+    html += `</div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+// ===== GSAP =====
+gsap.registerPlugin(ScrollTrigger);
+
+// Progress bar
+gsap.to('#progress-bar',{
+  scaleX:1,ease:'none',
+  scrollTrigger:{trigger:'body',start:'top top',end:'bottom bottom',scrub:.3}
+});
+
+// Hero entrance
+const heroTL = gsap.timeline({delay:.3});
+heroTL.fromTo('#hero-tag',{opacity:0,y:20},{opacity:1,y:0,duration:.6,ease:'power3.out'})
+  .fromTo('#hero-title',{opacity:0,y:30},{opacity:1,y:0,duration:.8,ease:'power3.out'},'-=.3')
+  .fromTo('#hero-sub',{opacity:0,y:20},{opacity:1,y:0,duration:.6,ease:'power3.out'},'-=.4')
+  .fromTo('#hero-line',{opacity:0,scaleX:0},{opacity:1,scaleX:1,duration:.5,ease:'power2.out'},'-=.3')
+  .fromTo('#hero-cta',{opacity:0},{opacity:1,duration:.5},'-=.2');
+
+// Reveal elements on scroll
+document.querySelectorAll('.reveal').forEach(el=>{
+  gsap.to(el,{
+    opacity:1,y:0,duration:.8,ease:'power3.out',
+    scrollTrigger:{trigger:el,start:'top 88%',toggleActions:'play none none none'}
+  });
+});
+
+// ===== KPI COUNTER ANIMATION =====
+document.querySelectorAll('[data-count]').forEach(el=>{
+  const target = parseFloat(el.dataset.count);
+  const isInt = Number.isInteger(target);
+  ScrollTrigger.create({
+    trigger:el,start:'top 90%',once:true,
+    onEnter:()=>{
+      gsap.to({v:0},{v:target,duration:2,ease:'power2.out',
+        onUpdate:function(){ el.textContent = isInt ? Math.round(this.targets()[0].v).toLocaleString() : fmt(this.targets()[0].v); }
+      });
+    }
+  });
+});
+
+// ===== ECHARTS INSTANCES =====
+const charts = [];
+function initChart(id){ const c = echarts.init(document.getElementById(id),null,{renderer:'svg'}); charts.push(c); return c; }
+window.addEventListener('resize',()=>charts.forEach(c=>c.resize()));
+
+// ----- Chart 1: Horizontal Bar (excl. 地暖) -----
+(function(){
+  const data = SYSTEMS.filter(s=>s.short!=='地暖').sort((a,b)=>a.total-b.total);
+  const chart = initChart('chart-bar');
+  chart.setOption({
+    grid:{left:110,right:40,top:10,bottom:20},
+    xAxis:{type:'value',axisLabel:{fontFamily:'JetBrains Mono',fontSize:11,color:'rgba(200,215,240,0.5)'},splitLine:{lineStyle:{color:'rgba(0,229,255,0.05)'}},axisLine:{show:false},axisTick:{show:false}},
+    yAxis:{type:'category',data:data.map(d=>d.short),axisLabel:{fontFamily:'Noto Sans SC',fontSize:12,color:'rgba(200,215,240,0.7)'},axisLine:{show:false},axisTick:{show:false}},
+    series:[{
+      type:'bar',barWidth:22,
+      data:data.map((d,i)=>({
+        value:d.total,
+        itemStyle:{
+          color:new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:PALETTE[SYSTEMS.indexOf(d)]+'33'},{offset:1,color:PALETTE[SYSTEMS.indexOf(d)]}]),
+          borderRadius:[0,4,4,0]
+        }
+      })),
+      label:{show:true,position:'right',fontFamily:'JetBrains Mono',fontSize:11,color:'rgba(200,215,240,0.7)',formatter:p=>fmt(p.value)+' m'}
+    }],
+    tooltip:{show:true,className:'chart-tooltip',borderWidth:0,backgroundColor:'transparent',formatter:function(p){
+      const sys = data[p.dataIndex];
+      return tooltipBase(sys.short,[{color:PALETTE[SYSTEMS.findIndex(s=>s.short===sys.short)],label:'总长度',value:fmt(sys.total)+' m'},{color:'rgba(200,215,240,0.3)',label:'占比(不含地暖)',value:(sys.total/TOTAL_EX_FLOOR*100).toFixed(1)+'%'}]);
+    }}
+  });
+
+  // Dominance mini chart
+  const dc = initChart('chart-dominance');
+  dc.setOption({
+    grid:{left:10,right:10,top:10,bottom:10},
+    xAxis:{show:false,max:GRAND_TOTAL},
+    yAxis:{show:false,type:'category',data:['']},
+    series:[
+      {type:'bar',stack:'t',barWidth:30,data:[10450],itemStyle:{color:'#f59e0b',borderRadius:[4,0,0,4]},z:2},
+      {type:'bar',stack:'t',barWidth:30,data:[TOTAL_EX_FLOOR],itemStyle:{color:'rgba(0,229,255,0.3)',borderRadius:[0,4,4,0]}}
+    ],
+    tooltip:{show:false}
+  });
+})();
+
+// ----- Chart 2: Treemap -----
+(function(){
+  const chart = initChart('chart-treemap');
+  const treeData = SYSTEMS.map((sys,i)=>({
+    name:sys.short,
+    itemStyle:{borderColor:'rgba(10,14,26,0.8)',borderWidth:2},
+    children:sys.specs.filter(sp=>!(sys.short==='地暖'&&sp.s==='DE16')).map(sp=>({
+      name:sp.s,value:sp.v,
+      itemStyle:{color:PALETTE[i]+'cc'},
+      label:{color:'#e8edf5'}
+    }))
+  }));
+  chart.setOption({
+    tooltip:{className:'chart-tooltip',borderWidth:0,backgroundColor:'transparent',formatter:function(p){
+      if(!p.data.value) return '';
+      const parent = p.treePathInfo && p.treePathInfo.length>1 ? p.treePathInfo[1].name : '';
+      return tooltipBase(parent+' / '+p.name,[{color:p.color,label:'管道长度',value:fmt(p.value)+' m'}]);
+    }},
+    series:[{
+      type:'treemap',width:'100%',height:'100%',
+      roam:false,nodeClick:false,
+      breadcrumb:{show:false},
+      levels:[
+        {itemStyle:{borderColor:'rgba(10,14,26,0.9)',borderWidth:3,gapWidth:3},upperLabel:{show:true,height:28,fontFamily:'Noto Sans SC',fontSize:12,fontWeight:700,color:'#e8edf5',backgroundColor:'rgba(10,14,26,0.6)',padding:[4,8]}},
+        {itemStyle:{borderColor:'rgba(10,14,26,0.5)',borderWidth:1,gapWidth:1},label:{fontFamily:'JetBrains Mono',fontSize:11}}
+      ],
+      data:treeData
+    }]
+  });
+})();
+
+// ----- Chart 3: Stacked Bar -----
+(function(){
+  const chart = initChart('chart-stacked');
+  const sysNames = SYSTEMS.map(s=>s.short);
+  const series = allSpecs.filter(sp=>sp!=='DE16').map(spec=>({
+    name:spec,type:'bar',stack:'total',barWidth:32,
+    emphasis:{focus:'series'},
+    itemStyle:{color:SPEC_COLORS[spec],borderRadius:0},
+    data:SYSTEMS.map(sys=>{
+      const found = sys.specs.find(sp=>sp.s===spec);
+      return found ? found.v : 0;
+    })
+  }));
+  chart.setOption({
+    grid:{left:90,right:30,top:60,bottom:40},
+    legend:{top:6,textStyle:{fontFamily:'JetBrains Mono',fontSize:10,color:'rgba(200,215,240,0.6)'},itemWidth:12,itemHeight:10,itemGap:10,pageTextStyle:{color:'rgba(200,215,240,0.5)'}},
+    xAxis:{type:'category',data:sysNames,axisLabel:{fontFamily:'Noto Sans SC',fontSize:11,color:'rgba(200,215,240,0.6)',rotate:25},axisLine:{lineStyle:{color:'rgba(0,229,255,0.1)'}},axisTick:{show:false}},
+    yAxis:{type:'value',name:'长度 (m)',nameTextStyle:{fontFamily:'Noto Sans SC',fontSize:11,color:'rgba(200,215,240,0.4)',padding:[0,0,0,-40]},axisLabel:{fontFamily:'JetBrains Mono',fontSize:10,color:'rgba(200,215,240,0.4)'},splitLine:{lineStyle:{color:'rgba(0,229,255,0.05)'}},axisLine:{show:false},axisTick:{show:false}},
+    tooltip:{className:'chart-tooltip',borderWidth:0,backgroundColor:'transparent',trigger:'axis',formatter:function(ps){
+      let items = ps.filter(p=>p.value>0).map(p=>({color:p.color,label:p.seriesName,value:fmt(p.value)+' m'}));
+      return tooltipBase(ps[0].axisValue,items);
+    }},
+    series
+  });
+})();
+
+// ----- Chart 4: Donut -----
+(function(){
+  const chart = initChart('chart-donut');
+  const data = SYSTEMS.map((s,i)=>{
+    const v = s.short==='地暖' ? s.total-10450 : s.total;
+    return {name:s.short,value:parseFloat(v.toFixed(2)),itemStyle:{color:PALETTE[i]}};
+  }).sort((a,b)=>b.value-a.value);
+
+  chart.setOption({
+    tooltip:{className:'chart-tooltip',borderWidth:0,backgroundColor:'transparent',formatter:function(p){
+      return tooltipBase(p.name,[{color:p.color,label:'长度',value:fmt(p.value)+' m'},{color:'rgba(200,215,240,0.3)',label:'占比',value:p.percent.toFixed(1)+'%'}]);
+    }},
+    series:[{
+      type:'pie',radius:['48%','76%'],center:['50%','52%'],
+      avoidLabelOverlap:true,
+      padAngle:2,
+      itemStyle:{borderColor:'rgba(10,14,26,0.9)',borderWidth:2,borderRadius:4},
+      label:{show:true,fontFamily:'Noto Sans SC',fontSize:11,color:'rgba(200,215,240,0.7)',formatter:'{b}\n{d}%',lineHeight:16},
+      labelLine:{lineStyle:{color:'rgba(0,229,255,0.2)'}},
+      emphasis:{scaleSize:8,label:{fontWeight:700,fontSize:13,color:'#e8edf5'}},
+      data
+    }]
+  });
+
+  // Rank list
+  const rankContainer = document.getElementById('rank-list');
+  const top5 = data.slice(0,5);
+  const maxVal = top5[0].value;
+  top5.forEach((d,i)=>{
+    const pct = (d.value/TOTAL_EX_FLOOR*100).toFixed(1);
+    const barW = (d.value/maxVal*100).toFixed(0);
+    rankContainer.innerHTML += `
+      <div class="flex items-center gap-4">
+        <div class="text-2xl font-black font-mono" style="color:${PALETTE[SYSTEMS.findIndex(s=>s.short===d.name)]};min-width:30px">${i+1}</div>
+        <div class="flex-1">
+          <div class="flex justify-between items-baseline mb-1">
+            <span class="text-sm font-medium">${d.name}</span>
+            <span class="font-mono text-xs" style="color:var(--accent-cyan)">${fmt(d.value)} m</span>
+          </div>
+          <div class="h-1.5 rounded-full" style="background:rgba(0,229,255,0.08)">
+            <div class="h-full rounded-full" style="width:${barW}%;background:${PALETTE[SYSTEMS.findIndex(s=>s.short===d.name)]};box-shadow:0 0 8px ${PALETTE[SYSTEMS.findIndex(s=>s.short===d.name)]}55"></div>
+          </div>
+          <div class="text-xs mt-1 font-mono" style="color:var(--text-secondary)">${pct}%</div>
+        </div>
+      </div>`;
+  });
+})();
+
+// ===== DATA TABLE =====
+(function(){
+  const tbody = document.querySelector('#detail-table tbody');
+  let idx = 0;
+  let rows = '';
+  SYSTEMS.forEach((sys,si)=>{
+    sys.specs.forEach((sp,spi)=>{
+      idx++;
+      rows += `<tr>
+        <td class="font-mono text-xs" style="color:var(--text-secondary)">${String(idx).padStart(2,'0')}</td>
+        <td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${PALETTE[si]};margin-right:8px"></span>${sys.name}</td>
+        <td class="font-mono text-sm">${sp.s}</td>
+        <td class="font-mono text-sm" style="text-align:right">${fmt(sp.v)}</td>
+        <td class="font-mono text-sm" style="text-align:right;color:var(--text-secondary)">${spi===0 ? fmt(sys.total) : ''}</td>
+      </tr>`;
+    });
+    rows += `<tr class="subtotal-row">
+      <td></td><td colspan="2" style="color:var(--accent-cyan)">${sys.name} 小计</td>
+      <td class="font-mono" style="text-align:right;color:var(--accent-cyan)">${fmt(sys.total)}</td><td></td>
+    </tr>`;
+  });
+  rows += `<tr class="grand-total">
+    <td></td><td colspan="2">合计 GRAND TOTAL</td>
+    <td style="text-align:right">${fmt(GRAND_TOTAL)}</td><td></td>
+  </tr>`;
+  tbody.innerHTML = rows;
+})();
+</script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"75124c326cb447fe934cde04713ae013","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
